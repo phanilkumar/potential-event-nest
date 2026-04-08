@@ -1,0 +1,12 @@
+/log/*
+/tmp/*
+/storage/*
+/public/assets
+.byebug_history
+/config/master.key
+/config/credentials/*.key
+/coverage/
+.env
+
+# DO NOT add .claude/, .cursor/, .aider*, .continue/, .cody/, .cline/ here
+# AI tool conversations are tracked intentionally — see README

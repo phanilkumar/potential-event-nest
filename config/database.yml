@@ -1,0 +1,22 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: 5
+
+development:
+  <<: *default
+  database: eventnest_development
+  username: <%= ENV.fetch("POSTGRES_USER", "eventnest") %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD", "eventnest_dev") %>
+  host: <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+
+test:
+  <<: *default
+  database: eventnest_test
+  username: <%= ENV.fetch("POSTGRES_USER", "eventnest") %>
+  password: <%= ENV.fetch("POSTGRES_PASSWORD", "eventnest_dev") %>
+  host: <%= ENV.fetch("DATABASE_HOST", "localhost") %>
+
+production:
+  <<: *default
+  url: <%= ENV["DATABASE_URL"] %>

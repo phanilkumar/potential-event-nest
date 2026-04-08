@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -e
+
+# Configure git hooks for AI conversation capture
+git config core.hooksPath .git-hooks 2>/dev/null || true
+
+exec "$@"

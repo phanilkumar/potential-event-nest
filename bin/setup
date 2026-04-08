@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -e
+
+echo "============================================"
+echo "  EventNest — Setup"
+echo "============================================"
+echo ""
+
+echo "[1/4] Configuring git hooks..."
+git config core.hooksPath .git-hooks 2>/dev/null || true
+chmod +x .git-hooks/* 2>/dev/null || true
+echo "      Done."
+echo ""
+
+echo "[2/4] Installing dependencies..."
+bundle install
+echo ""
+
+echo "[3/4] Setting up database..."
+rails db:create db:migrate db:seed
+echo ""
+
+echo "[4/4] Running test suite..."
+bundle exec rspec
+echo ""
+
+echo "============================================"
+echo "  Setup complete!"
+echo ""
+echo "  Start the server:  rails server"
+echo "  Run tests:         bundle exec rspec"
+echo "  Rails console:     rails c"
+echo "============================================"

@@ -1,0 +1,44 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: eventnest
+      POSTGRES_PASSWORD: eventnest_dev
+      POSTGRES_DB: eventnest_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  web:
+    build: .
+    command: bash -c "rm -f tmp/pids/server.pid && rails server -b 0.0.0.0"
+    volumes:
+      - .:/app
+      - bundle_cache:/usr/local/bundle
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://eventnest:eventnest_dev@db:5432/eventnest_development
+      DATABASE_HOST: db
+      RAILS_ENV: development
+      SECRET_KEY_BASE: dev_secret_key_base_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0
+
+  test:
+    build: .
+    command: bundle exec rspec
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://eventnest:eventnest_dev@db:5432/eventnest_test
+      DATABASE_HOST: db
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test_secret_key_base_z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4j3i2h1g0
+
+volumes:
+  pgdata:
+  bundle_cache:
