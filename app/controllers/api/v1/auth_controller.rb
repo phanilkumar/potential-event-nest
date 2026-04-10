@@ -5,6 +5,7 @@ module Api
 
       def register
         user = User.new(register_params)
+        user.role = "attendee"  # never trust user-supplied role
 
         if user.save
           token = user.generate_jwt
@@ -32,7 +33,7 @@ module Api
       private
 
       def register_params
-        params.permit(:name, :email, :password, :password_confirmation, :role, :phone)
+        params.permit(:name, :email, :password, :password_confirmation, :phone)
       end
     end
   end

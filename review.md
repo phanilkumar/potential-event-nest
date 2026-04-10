@@ -511,3 +511,61 @@ end
 | Web thread blocked | Yes | No — Sidekiq worker handles it |
 
 `after_commit` fires after the transaction is fully committed so no DB connection is held. `saved_change_to_venue?` ensures the job is only enqueued when the venue field actually changed. `update_column` in the job bypasses callbacks to avoid re-enqueuing.
+
+---
+
+#9) Security Review: Mass Assignment — Role Escalation on Registration
+
+**File:** `app/controllers/api/v1/auth_controller.rb`
+**Severity:** Critical
+**Type:** Mass Assignment / Privilege Escalation
+
+## Vulnerable Code
+
+```ruby
+def register_params
+  params.permit(:name, :email, :password, :password_confirmation, :role, :phone)
+end
+```
+
+## How
+
+`:role` is in the permitted list. Any unauthenticated user can self-assign `admin` or `organizer` during signup and gain full elevated privileges immediately.
+
+## curl — Before fix
+
+```bash
+# Register as admin — succeeds, gets admin token
+curl -s -X POST http://localhost:3000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Eve","email":"eve@evil.com","password":"password123","password_confirmation":"password123","role":"admin"}'
+# response: {"token":"...","user":{"role":"admin"}}  ← admin account created
+```
+
+## Fix
+
+```ruby
+# remove :role from permit
+def register_params
+  params.permit(:name, :email, :password, :password_confirmation, :phone)
+end
+
+# force attendee regardless of what was sent
+def register
+  user = User.new(register_params)
+  user.role = "attendee"  # never trust user-supplied role
+  ...
+end
+```
+
+Two-layer defence: `role` is not permitted (stripped by strong parameters) **and** explicitly overwritten to `"attendee"` before save. Role elevation must go through a separate privileged admin endpoint.
+
+## curl — After fix
+
+```bash
+# Same request — role param silently ignored, account created as attendee
+curl -s -X POST http://localhost:3000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Eve","email":"eve@evil.com","password":"password123","password_confirmation":"password123","role":"admin"}'
+# response: {"token":"...","user":{"role":"attendee"}}  ← always attendee
+```
