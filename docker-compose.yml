@@ -30,7 +30,7 @@ services:
 
   test:
     build: .
-    command: bundle exec rspec
+    command: bash -c "bundle exec rails db:create db:schema:load && bundle exec rspec"
     depends_on:
       - db
     environment:
