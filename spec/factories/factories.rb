@@ -27,12 +27,12 @@ FactoryBot.define do
     association :user, factory: [:user, :organizer]
 
     before(:create) do |event|
-      event.class.skip_callback(:save, :before, :geocode_venue, raise: false)
+      event.class.skip_callback(:commit, :after, :enqueue_geocode_if_venue_changed, raise: false)
       event.class.skip_callback(:create, :after, :send_organizer_confirmation, raise: false)
     end
 
     after(:create) do |event|
-      event.class.set_callback(:save, :before, :geocode_venue)
+      event.class.set_callback(:commit, :after, :enqueue_geocode_if_venue_changed)
       event.class.set_callback(:create, :after, :send_organizer_confirmation)
     end
   end

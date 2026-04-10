@@ -11,7 +11,7 @@ class Event < ApplicationRecord
   after_update :notify_attendees_if_cancelled
   after_commit :update_search_index, on: :update
   after_create :send_organizer_confirmation
-  before_save :geocode_venue
+  after_commit :enqueue_geocode_if_venue_changed, on: [:create, :update]
 
   def total_tickets
     ticket_tiers.sum(:quantity)
@@ -25,12 +25,8 @@ class Event < ApplicationRecord
     total_sold >= total_tickets
   end
 
-  def geocode_venue
-    if venue.present?
-      Rails.logger.info("Geocoding venue: #{venue}")
-      sleep(0.1)
-      self.city = venue.split(",").last&.strip
-    end
+  def enqueue_geocode_if_venue_changed
+    GeocodeVenueJob.perform_later(id) if saved_change_to_venue?
   end
 
   def notify_attendees_if_cancelled

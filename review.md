@@ -445,3 +445,69 @@ curl "http://localhost:3000/api/v1/events?sort_by=(SELECT+version())"
 curl "http://localhost:3000/api/v1/events?sort_by=title+DESC"
 # SQL: ORDER BY title DESC
 ```
+
+---
+
+#8) Bug Fix: Blocking I/O in `geocode_venue` before save
+
+**File:** `app/models/event.rb`, `app/jobs/geocode_venue_job.rb` (new)
+**Severity:** High
+**Type:** Blocking I/O / Performance
+
+## Vulnerable Code
+
+```ruby
+before_save :geocode_venue
+
+def geocode_venue
+  if venue.present?
+    Rails.logger.info("Geocoding venue: #{venue}")
+    sleep(0.1)                              # external HTTP call — blocks web thread
+    self.city = venue.split(",").last&.strip
+  end
+end
+```
+
+## Problems
+
+1. **Blocks the DB transaction** — `before_save` runs inside the open transaction. Every external API call holds the transaction open and ties up a DB connection.
+2. **Fires on every save** — a status update, a title change, anything — triggers a geocoding HTTP call even when `venue` didn't change.
+
+## Fix
+
+Move the HTTP call into a background job and only enqueue it when `venue` actually changed.
+
+**`app/models/event.rb`**
+```ruby
+# removed: before_save :geocode_venue
+after_commit :enqueue_geocode_if_venue_changed, on: [:create, :update]
+
+def enqueue_geocode_if_venue_changed
+  GeocodeVenueJob.perform_later(id) if saved_change_to_venue?
+end
+```
+
+**`app/jobs/geocode_venue_job.rb`** (new)
+```ruby
+class GeocodeVenueJob < ApplicationJob
+  queue_as :default
+
+  def perform(event_id)
+    event = Event.find_by(id: event_id)
+    return unless event&.venue.present?
+
+    city = event.venue.split(",").last&.strip
+    event.update_column(:city, city) if city.present?
+  end
+end
+```
+
+## Why this works
+
+| | Before | After |
+|---|---|---|
+| DB transaction held open | Yes — during HTTP call | No — job fires after commit |
+| Fires when venue unchanged | Yes — every save | No — guarded by `saved_change_to_venue?` |
+| Web thread blocked | Yes | No — Sidekiq worker handles it |
+
+`after_commit` fires after the transaction is fully committed so no DB connection is held. `saved_change_to_venue?` ensures the job is only enqueued when the venue field actually changed. `update_column` in the job bypasses callbacks to avoid re-enqueuing.
