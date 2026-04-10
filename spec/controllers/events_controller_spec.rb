@@ -10,15 +10,32 @@ RSpec.describe Api::V1::EventsController, type: :request do
   end
 
   describe "GET /api/v1/events" do
-    it "returns published upcoming events" do
+    it "returns published upcoming events with pagination metadata" do
       create(:event, status: "published", starts_at: 1.week.from_now, ends_at: 1.week.from_now + 3.hours)
       create(:event, status: "draft", starts_at: 2.weeks.from_now, ends_at: 2.weeks.from_now + 3.hours)
 
       get "/api/v1/events"
 
       expect(response).to have_http_status(:ok)
-      data = JSON.parse(response.body)
-      expect(data.length).to eq(1)
+      body = JSON.parse(response.body)
+      expect(body["data"].length).to eq(1)
+      expect(body["pagination"]).to include(
+        "current_page" => 1,
+        "total_count"  => 1,
+        "total_pages"  => 1
+      )
+    end
+
+    it "respects page and per_page params" do
+      create_list(:event, 3, status: "published", starts_at: 1.week.from_now, ends_at: 1.week.from_now + 3.hours)
+
+      get "/api/v1/events", params: { page: 1, per_page: 2 }
+
+      body = JSON.parse(response.body)
+      expect(body["data"].length).to eq(2)
+      expect(body["pagination"]["total_count"]).to eq(3)
+      expect(body["pagination"]["total_pages"]).to eq(2)
+      expect(body["pagination"]["next_page"]).to eq(2)
     end
   end
 

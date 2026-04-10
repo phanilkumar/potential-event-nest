@@ -25,27 +25,39 @@ module Api
         sort_dir = sort_dir&.upcase == "DESC" ? "DESC" : "ASC"
         events = events.order("#{sort_col} #{sort_dir}")
 
-        render json: events.map { |event|
-          {
-            id: event.id,
-            title: event.title,
-            description: event.description,
-            venue: event.venue,
-            city: event.city,
-            starts_at: event.starts_at,
-            ends_at: event.ends_at,
-            category: event.category,
-            organizer: event.user.name,
-            total_tickets: event.total_tickets,
-            tickets_sold: event.total_sold,
-            ticket_tiers: event.ticket_tiers.map { |t|
-              {
-                id: t.id,
-                name: t.name,
-                price: t.price.to_f,
-                available: t.available_quantity
+        events = events.page(params[:page]).per(params[:per_page])
+
+        render json: {
+          data: events.map { |event|
+            {
+              id: event.id,
+              title: event.title,
+              description: event.description,
+              venue: event.venue,
+              city: event.city,
+              starts_at: event.starts_at,
+              ends_at: event.ends_at,
+              category: event.category,
+              organizer: event.user.name,
+              total_tickets: event.total_tickets,
+              tickets_sold: event.total_sold,
+              ticket_tiers: event.ticket_tiers.map { |t|
+                {
+                  id: t.id,
+                  name: t.name,
+                  price: t.price.to_f,
+                  available: t.available_quantity
+                }
               }
             }
+          },
+          pagination: {
+            current_page: events.current_page,
+            next_page: events.next_page,
+            prev_page: events.prev_page,
+            total_pages: events.total_pages,
+            total_count: events.total_count,
+            per_page: events.limit_value
           }
         }
       end

@@ -11,16 +11,30 @@ RSpec.describe Api::V1::OrdersController, type: :request do
   end
 
   describe "GET /api/v1/orders" do
-    it "returns only the current user's orders" do
+    it "returns only the current user's orders with pagination metadata" do
       own_order   = create(:order, user: attendee, event: event)
       other_order = create(:order, user: other,    event: event)
 
       get "/api/v1/orders", headers: auth_headers(attendee)
 
       expect(response).to have_http_status(:ok)
-      ids = JSON.parse(response.body).map { |o| o["id"] }
+      body = JSON.parse(response.body)
+      ids  = body["data"].map { |o| o["id"] }
       expect(ids).to include(own_order.id)
       expect(ids).not_to include(other_order.id)
+      expect(body["pagination"]).to include("current_page" => 1, "total_count" => 1)
+    end
+
+    it "respects page and per_page params" do
+      create_list(:order, 3, user: attendee, event: event)
+
+      get "/api/v1/orders", params: { page: 1, per_page: 2 }, headers: auth_headers(attendee)
+
+      body = JSON.parse(response.body)
+      expect(body["data"].length).to eq(2)
+      expect(body["pagination"]["total_count"]).to eq(3)
+      expect(body["pagination"]["total_pages"]).to eq(2)
+      expect(body["pagination"]["next_page"]).to eq(2)
     end
   end
 

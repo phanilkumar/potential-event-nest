@@ -3,17 +3,30 @@ module Api
     class OrdersController < ApplicationController
 
       def index
-        orders = current_user.orders.order(created_at: :desc)
+        orders = current_user.orders
+                              .includes(:event, :order_items)
+                              .order(created_at: :desc)
+                              .page(params[:page]).per(params[:per_page])
 
-        render json: orders.map { |order|
-          {
-            id: order.id,
-            confirmation_number: order.confirmation_number,
-            event: order.event.title,
-            status: order.status,
-            total_amount: order.total_amount.to_f,
-            items_count: order.order_items.count,
-            created_at: order.created_at
+        render json: {
+          data: orders.map { |order|
+            {
+              id: order.id,
+              confirmation_number: order.confirmation_number,
+              event: order.event.title,
+              status: order.status,
+              total_amount: order.total_amount.to_f,
+              items_count: order.order_items.size,
+              created_at: order.created_at
+            }
+          },
+          pagination: {
+            current_page: orders.current_page,
+            next_page: orders.next_page,
+            prev_page: orders.prev_page,
+            total_pages: orders.total_pages,
+            total_count: orders.total_count,
+            per_page: orders.limit_value
           }
         }
       end
