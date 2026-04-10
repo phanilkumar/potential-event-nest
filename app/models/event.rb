@@ -9,7 +9,7 @@ class Event < ApplicationRecord
   scope :upcoming, -> { where("starts_at > ?", Time.current) }
 
   after_update :notify_attendees_if_cancelled
-  after_update :update_search_index
+  after_commit :update_search_index, on: :update
   after_create :send_organizer_confirmation
   before_save :geocode_venue
 

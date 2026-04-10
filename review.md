@@ -157,3 +157,80 @@ curl -X POST http://localhost:3000/api/v1/orders/7/cancel \
   -H "Authorization: Bearer <alice_token>"
 # response: {message: "Order cancelled", status: "cancelled"}
 ```
+
+---
+
+# Security Review: BOLA on Events (update & delete)
+
+**File:** `app/controllers/api/v1/events_controller.rb`
+**Severity:** Critical
+**Type:** BOLA / IDOR (OWASP API Security #1)
+
+## Vulnerable Code
+
+```ruby
+def update  = Event.find(params[:id])   # any event ID — no ownership check
+def destroy = Event.find(params[:id])   # any event ID — no ownership check
+```
+
+## How
+
+Any authenticated user can update or delete any event by supplying its ID. No check that the event belongs to `current_user`.
+
+## curl — Before fix
+
+```bash
+# Bob updates Alice's event 107 — 200, title changed
+curl -s -X PUT http://localhost:3000/api/v1/events/107 \
+  -H "Authorization: Bearer $BOB_TOKEN" \
+  -d '{"event":{"title":"Hacked by Bob"}}'
+# response: {"title":"Hacked by Bob", "organizer":{"name":"Alice"}, ...}
+
+# Bob deletes Alice's event — 204, gone permanently
+curl -s -X DELETE http://localhost:3000/api/v1/events/107 \
+  -H "Authorization: Bearer $BOB_TOKEN"
+# HTTP Status: 204
+```
+
+## Fix
+
+```ruby
+def update  = current_user.events.find(params[:id])
+def destroy = current_user.events.find(params[:id])
+```
+
+## curl — After fix
+
+```bash
+# Bob tries to update Alice's event — 404
+curl -s -X PUT http://localhost:3000/api/v1/events/107 \
+  -H "Authorization: Bearer $BOB_TOKEN" \
+  -d '{"event":{"title":"Hacked by Bob"}}'
+# response: {"error":"Not Found"}
+
+# Bob tries to delete Alice's event — 404, event untouched
+curl -s -X DELETE http://localhost:3000/api/v1/events/107 \
+  -H "Authorization: Bearer $BOB_TOKEN"
+# HTTP Status: 404
+
+# Alice updates her own event — 200
+curl -s -X PUT http://localhost:3000/api/v1/events/107 \
+  -H "Authorization: Bearer $ALICE_TOKEN" \
+  -d '{"event":{"title":"Alice Workshop Updated"}}'
+# response: {"title":"Alice Workshop Updated", ...}
+
+# Alice deletes her own event — 204
+curl -s -X DELETE http://localhost:3000/api/v1/events/107 \
+  -H "Authorization: Bearer $ALICE_TOKEN"
+# HTTP Status: 204
+```
+
+## Bonus fix — `app/models/event.rb`
+
+```ruby
+# before — job fires inside DB transaction; Redis error rolls back the update
+after_update  :update_search_index
+
+# after — job fires after commit; failure never affects the DB write
+after_commit  :update_search_index, on: :update
+```

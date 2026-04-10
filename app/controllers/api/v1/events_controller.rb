@@ -87,7 +87,7 @@ module Api
       end
 
       def update
-        event = Event.find(params[:id])
+        event = current_user.events.find(params[:id])
 
         if event.update(event_params)
           render json: event
@@ -97,7 +97,7 @@ module Api
       end
 
       def destroy
-        event = Event.find(params[:id])
+        event = current_user.events.find(params[:id])
         event.destroy
         head :no_content
       end
