@@ -3,7 +3,7 @@ module Api
     class OrdersController < ApplicationController
 
       def index
-        orders = Order.all.order(created_at: :desc)
+        orders = current_user.orders.order(created_at: :desc)
 
         render json: orders.map { |order|
           {
@@ -19,7 +19,7 @@ module Api
       end
 
       def show
-        order = Order.find(params[:id])
+        order = current_user.orders.find(params[:id])
 
         render json: {
           id: order.id,
@@ -78,7 +78,7 @@ module Api
       end
 
       def cancel
-        order = Order.find(params[:id])
+        order = current_user.orders.find(params[:id])
 
         if order.status == "confirmed" || order.status == "pending"
           order.cancel!

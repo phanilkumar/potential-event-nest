@@ -1,4 +1,4 @@
-# Security Review: SQL Injection
+#1) Security Review: SQL Injection
 
 **File:** `app/controllers/api/v1/events_controller.rb`, line 10
 **Severity:** Critical
@@ -64,3 +64,96 @@ curl "http://localhost:3000/api/v1/events?search=%27+OR+1%3D1--"
 ```
 
 The single quote `'` becomes `''` (escaped), so it never closes the string literal and cannot inject SQL keywords.
+
+---
+
+#2) Security Review: Broken Object Level Authorization (BOLA)
+
+**File:** `app/controllers/api/v1/orders_controller.rb`
+**Severity:** Critical
+**Type:** BOLA / IDOR (OWASP API Security #1)
+
+## Vulnerable Code
+
+```ruby
+def index  = Order.all                  # returns every user's orders
+def show   = Order.find(params[:id])    # any order ID works
+def cancel = Order.find(params[:id])    # any order ID works
+```
+
+## How
+
+All three actions fetch orders from the global scope with no check that the order belongs to the requesting user. Any authenticated user can enumerate, read, or cancel another user's orders by simply changing the ID in the request.
+
+## curl — Vulnerable (before fix)
+
+```bash
+# Alice is logged in. Bob's order ID is 42.
+
+# Alice reads Bob's order — succeeds, returns Bob's data
+curl http://localhost:3000/api/v1/orders/42 \
+  -H "Authorization: Bearer <alice_token>"
+
+# Alice cancels Bob's order — succeeds
+curl -X POST http://localhost:3000/api/v1/orders/42/cancel \
+  -H "Authorization: Bearer <alice_token>"
+
+# Alice dumps all orders from all users
+curl http://localhost:3000/api/v1/orders \
+  -H "Authorization: Bearer <alice_token>"
+```
+
+## Fix
+
+Scope every lookup through `current_user.orders` instead of the global `Order` scope. `find` on a scoped relation raises `ActiveRecord::RecordNotFound` (→ 404) when the record doesn't belong to the user.
+
+```ruby
+def index  = current_user.orders.order(created_at: :desc)
+def show   = current_user.orders.find(params[:id])
+def cancel = current_user.orders.find(params[:id])
+```
+
+## curl — Vulnerable (before fix)
+
+> Alice is authenticated. Bob's order ID is 42.
+
+```bash
+# Alice lists ALL orders from every user — 200, full dump
+curl http://localhost:3000/api/v1/orders \
+  -H "Authorization: Bearer <alice_token>"
+# response: [{id: 1, ...}, {id: 42, ...}, {id: 99, ...}]  ← Bob's and everyone else's orders included
+
+# Alice reads Bob's order — 200, Bob's data exposed
+curl http://localhost:3000/api/v1/orders/42 \
+  -H "Authorization: Bearer <alice_token>"
+# response: {id: 42, confirmation_number: "EVN-...", total_amount: 1500.0, ...}
+
+# Alice cancels Bob's order — 200, order cancelled
+curl -X POST http://localhost:3000/api/v1/orders/42/cancel \
+  -H "Authorization: Bearer <alice_token>"
+# response: {message: "Order cancelled", status: "cancelled"}
+```
+
+## curl — Safe (after fix)
+
+```bash
+# Alice lists orders — 200, only her own orders returned
+curl http://localhost:3000/api/v1/orders \
+  -H "Authorization: Bearer <alice_token>"
+# response: [{id: 7, ...}, {id: 23, ...}]  ← only Alice's orders
+
+# Alice tries to read Bob's order 42 — 404, not found
+curl http://localhost:3000/api/v1/orders/42 \
+  -H "Authorization: Bearer <alice_token>"
+# response: {error: "Not Found"}
+
+# Alice tries to cancel Bob's order 42 — 404, not found, Bob's order untouched
+curl -X POST http://localhost:3000/api/v1/orders/42/cancel \
+  -H "Authorization: Bearer <alice_token>"
+# response: {error: "Not Found"}
+
+# Alice cancels her own order 7 — 200, works fine
+curl -X POST http://localhost:3000/api/v1/orders/7/cancel \
+  -H "Authorization: Bearer <alice_token>"
+# response: {message: "Order cancelled", status: "cancelled"}
+```
