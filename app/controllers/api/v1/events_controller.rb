@@ -4,7 +4,7 @@ module Api
       skip_before_action :authenticate_user!, only: [:index, :show]
 
       def index
-        events = Event.published.upcoming
+        events = Event.published.upcoming.includes(:user, :ticket_tiers)
 
         if params[:search].present?
           events = events.where("title LIKE :search OR description LIKE :search", search: "%#{params[:search]}%")
@@ -46,7 +46,7 @@ module Api
       end
 
       def show
-        event = Event.find(params[:id])
+        event = Event.includes(:user, :ticket_tiers).find(params[:id])
 
         render json: {
           id: event.id,
