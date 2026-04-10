@@ -20,7 +20,7 @@ module Api
 
       # DELETE /api/v1/events/:event_id/bookmarks/:id
       def destroy
-        bookmark = current_user.bookmarks.find_by(event_id: params[:event_id])
+        bookmark = current_user.bookmarks.find_by(id: params[:id], event_id: params[:event_id])
 
         if bookmark
           bookmark.destroy
@@ -38,7 +38,7 @@ module Api
 
         events = current_user.bookmarked_events
                               .includes(:user, :ticket_tiers)
-                              .order(created_at: :desc)
+                              .order("bookmarks.created_at DESC")
 
         render json: events.map { |event|
           {

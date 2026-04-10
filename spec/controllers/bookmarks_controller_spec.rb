@@ -66,6 +66,20 @@ RSpec.describe Api::V1::BookmarksController, type: :request do
       expect(Bookmark.exists?(bookmark.id)).to be true
     end
 
+    it "returns 404 when the bookmark id does not match the event" do
+      # attendee has a bookmark on a different event — wrong :id in the URL
+      other_event    = create(:event, user: organizer, status: "published",
+                              starts_at: 3.weeks.from_now, ends_at: 3.weeks.from_now + 3.hours)
+      other_bookmark = create(:bookmark, user: attendee, event: other_event)
+
+      # supply correct event_id but wrong bookmark id (belongs to other_event)
+      delete "/api/v1/events/#{event.id}/bookmarks/#{other_bookmark.id}",
+             headers: auth_headers(attendee)
+
+      expect(response).to have_http_status(:not_found)
+      expect(Bookmark.exists?(other_bookmark.id)).to be true
+    end
+
     it "returns 404 when bookmark does not exist" do
       delete "/api/v1/events/#{event.id}/bookmarks/99999",
              headers: auth_headers(attendee)
