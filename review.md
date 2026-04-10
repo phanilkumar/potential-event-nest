@@ -569,3 +569,73 @@ curl -s -X POST http://localhost:3000/api/v1/auth/register \
   -d '{"name":"Eve","email":"eve@evil.com","password":"password123","password_confirmation":"password123","role":"admin"}'
 # response: {"token":"...","user":{"role":"attendee"}}  ← always attendee
 ```
+
+---
+
+#10) Security Review: Hardcoded Secret Keys Committed to Git
+
+**Files:** `config/secrets.yml`, `docker-compose.yml`
+**Severity:** Critical
+**Type:** Secret Exposure / Credential Leakage
+
+## Vulnerable Code
+
+**`config/secrets.yml`**
+```yaml
+development:
+  secret_key_base: dev_secret_key_base_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0
+
+test:
+  secret_key_base: test_secret_key_base_z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4j3i2h1g0
+```
+
+**`docker-compose.yml`**
+```yaml
+POSTGRES_PASSWORD: eventnest_dev
+DATABASE_URL: postgres://eventnest:eventnest_dev@db:5432/eventnest_development
+SECRET_KEY_BASE: dev_secret_key_base_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0
+```
+
+## How
+
+Anyone with read access to the repository (public or leaked) has:
+- The `secret_key_base` → can forge valid JWT tokens and signed cookies for any user, including admins
+- The database password → direct DB access if the port is reachable
+
+## Fix
+
+**`.env`** (gitignored — never committed)
+```
+POSTGRES_PASSWORD=eventnest_dev
+DATABASE_URL=postgres://eventnest:eventnest_dev@db:5432/eventnest_development
+DEV_SECRET_KEY_BASE=dev_secret_key_base_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0
+TEST_SECRET_KEY_BASE=test_secret_key_base_z9y8x7w6v5u4t3s2r1q0p9o8n7m6l5k4j3i2h1g0
+```
+
+**`.env.example`** (committed — safe placeholder template)
+```
+POSTGRES_PASSWORD=
+DEV_SECRET_KEY_BASE=   # generate: rails secret
+TEST_SECRET_KEY_BASE=  # generate: rails secret
+```
+
+**`config/secrets.yml`** — all environments now use `ENV.fetch`:
+```yaml
+development:
+  secret_key_base: <%= ENV.fetch("DEV_SECRET_KEY_BASE") %>
+
+test:
+  secret_key_base: <%= ENV.fetch("TEST_SECRET_KEY_BASE") %>
+
+production:
+  secret_key_base: <%= ENV.fetch("SECRET_KEY_BASE") %>
+```
+
+**`docker-compose.yml`** — references `.env` vars via `${VAR}` (Docker Compose reads `.env` automatically):
+```yaml
+environment:
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  SECRET_KEY_BASE: ${DEV_SECRET_KEY_BASE}
+```
+
+`ENV.fetch` (not `ENV[]`) raises `KeyError` at boot if a variable is missing — fails loudly in the right environment rather than silently using a nil secret.
