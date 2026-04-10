@@ -386,3 +386,62 @@ event = Event.includes(:user, :ticket_tiers).find(params[:id])
 |---|---|---|
 | `index` (50 events) | 101 queries | 3 queries |
 | `show` | 3 queries | 1 query |
+
+---
+
+#7) Security Review: SQL Injection via `sort_by` Parameter
+
+**File:** `app/controllers/api/v1/events_controller.rb`, line 21
+**Severity:** Critical
+**Type:** SQL Injection (Order-by clause)
+
+## Vulnerable Code
+
+```ruby
+events = events.order(params[:sort_by] || "starts_at ASC")
+```
+
+## How
+
+`params[:sort_by]` is passed raw into `.order()`. Unlike `WHERE` clauses, Rails does **not** parameterize `ORDER BY` — the string goes straight into SQL.
+
+```bash
+# Dump DB version — blind injection via order clause
+curl "http://localhost:3000/api/v1/events?sort_by=(SELECT+version())"
+
+# Boolean-based data exfiltration
+curl "http://localhost:3000/api/v1/events?sort_by=(CASE+WHEN+(SELECT+substring(password_digest,1,1)+FROM+users+LIMIT+1)='$'+THEN+starts_at+ELSE+title+END)"
+```
+
+## Fix
+
+```ruby
+SORT_COLUMNS = %w[starts_at ends_at title created_at].freeze
+sort_col, sort_dir = params[:sort_by].to_s.split
+sort_col = SORT_COLUMNS.include?(sort_col) ? sort_col : "starts_at"
+sort_dir = sort_dir&.upcase == "DESC" ? "DESC" : "ASC"
+events = events.order("#{sort_col} #{sort_dir}")
+```
+
+Only allowlisted column names pass through. Direction is forced to `ASC` or `DESC`. No user input ever touches the raw SQL string.
+
+## curl — Before fix
+
+```bash
+# Inject subquery into ORDER BY — returns DB version in sort behaviour
+curl "http://localhost:3000/api/v1/events?sort_by=(SELECT+version())"
+# SQL: ORDER BY (SELECT version())  ← arbitrary SQL executed
+```
+
+## curl — After fix
+
+```bash
+# Injection attempt — unknown column falls back to default
+curl "http://localhost:3000/api/v1/events?sort_by=(SELECT+version())"
+# sort_col not in allowlist → defaults to "starts_at ASC"
+# SQL: ORDER BY starts_at ASC  ← injection neutralised
+
+# Legitimate use still works
+curl "http://localhost:3000/api/v1/events?sort_by=title+DESC"
+# SQL: ORDER BY title DESC
+```

@@ -1,6 +1,8 @@
 module Api
   module V1
     class EventsController < ApplicationController
+      SORT_COLUMNS = %w[starts_at ends_at title created_at].freeze
+
       skip_before_action :authenticate_user!, only: [:index, :show]
 
       def index
@@ -18,7 +20,10 @@ module Api
           events = events.where(city: params[:city])
         end
 
-        events = events.order(params[:sort_by] || "starts_at ASC")
+        sort_col, sort_dir = params[:sort_by].to_s.split
+        sort_col = SORT_COLUMNS.include?(sort_col) ? sort_col : "starts_at"
+        sort_dir = sort_dir&.upcase == "DESC" ? "DESC" : "ASC"
+        events = events.order("#{sort_col} #{sort_dir}")
 
         render json: events.map { |event|
           {
