@@ -50,7 +50,7 @@ module Api
       private
 
       def tier_params
-        params.require(:ticket_tier).permit(:name, :price, :quantity, :sold_count, :sales_start, :sales_end)
+        params.require(:ticket_tier).permit(:name, :price, :quantity, :sales_start, :sales_end)
       end
     end
   end

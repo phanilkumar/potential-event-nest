@@ -160,7 +160,7 @@ curl -X POST http://localhost:3000/api/v1/orders/7/cancel \
 
 ---
 
-# Security Review: BOLA on Events (update & delete)
+#3) Security Review: BOLA on Events (update & delete)
 
 **File:** `app/controllers/api/v1/events_controller.rb`
 **Severity:** Critical
@@ -233,4 +233,52 @@ after_update  :update_search_index
 
 # after — job fires after commit; failure never affects the DB write
 after_commit  :update_search_index, on: :update
+```
+
+---
+
+# Security Review: Mass Assignment — sold_count exposed
+
+**File:** `app/controllers/api/v1/ticket_tiers_controller.rb`, line 53
+**Severity:** High
+**Type:** Mass Assignment / Business Logic Bypass
+
+## Vulnerable Code
+
+```ruby
+params.require(:ticket_tier).permit(:name, :price, :quantity, :sold_count, :sales_start, :sales_end)
+```
+
+## How
+
+`sold_count` is the system-managed counter of how many tickets have been sold. Permitting it means any authenticated user can set it to any value — zeroing it to make a sold-out tier appear available again, or inflating it to block others from buying.
+
+## curl — Before fix
+
+```bash
+# Reset sold_count to 0 on a sold-out tier — makes it appear fully available
+curl -s -X PUT http://localhost:3000/api/v1/events/1/ticket_tiers/1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"ticket_tier": {"sold_count": 0}}'
+# sold_count is now 0 — tier appears available despite tickets already sold
+```
+
+## Fix
+
+```ruby
+params.require(:ticket_tier).permit(:name, :price, :quantity, :sales_start, :sales_end)
+```
+
+`sold_count` removed from permitted params. It is only ever updated internally by `reserve_tickets!` when an order is placed — never from user input.
+
+## curl — After fix
+
+```bash
+# Same request — sold_count param is silently ignored
+curl -s -X PUT http://localhost:3000/api/v1/events/1/ticket_tiers/1 \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"ticket_tier": {"sold_count": 0}}'
+# sold_count unchanged in DB — business logic intact
 ```
