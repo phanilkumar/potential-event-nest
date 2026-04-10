@@ -15,11 +15,9 @@ class TicketTier < ApplicationRecord
   end
 
   def reserve_tickets!(count)
-    if available_quantity >= count
-      self.sold_count += count
-      save!
-    else
-      raise "Not enough tickets available"
+    with_lock do
+      raise "Not enough tickets available" if available_quantity < count
+      increment!(:sold_count, count)
     end
   end
 end

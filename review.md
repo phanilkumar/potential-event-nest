@@ -237,7 +237,7 @@ after_commit  :update_search_index, on: :update
 
 ---
 
-# Security Review: Mass Assignment — sold_count exposed
+#4) Security Review: Mass Assignment — sold_count exposed
 
 **File:** `app/controllers/api/v1/ticket_tiers_controller.rb`, line 53
 **Severity:** High
@@ -282,3 +282,61 @@ curl -s -X PUT http://localhost:3000/api/v1/events/1/ticket_tiers/1 \
   -d '{"ticket_tier": {"sold_count": 0}}'
 # sold_count unchanged in DB — business logic intact
 ```
+
+---
+
+#5) Bug Fix: Race Condition in Ticket Reservation
+
+**File:** `app/models/ticket_tier.rb`
+**Severity:** High
+**Type:** Race Condition / TOCTOU (Time-of-Check to Time-of-Use)
+
+## Vulnerable Code
+
+```ruby
+def reserve_tickets!(count)
+  if available_quantity >= count   # 1. check
+    self.sold_count += count       # 2. modify in memory
+    save!                          # 3. write back
+  else
+    raise "Not enough tickets available"
+  end
+end
+```
+
+## How
+
+Two concurrent requests both read `available_quantity` before either writes back. Both pass the check, both increment from the same stale baseline, and the last write overwrites the first — resulting in oversold tickets.
+
+```
+Thread A reads available_quantity → 2  ✓ passes
+Thread B reads available_quantity → 2  ✓ passes  (before A writes)
+Thread A: sold_count += 2 → save!  →  DB: sold_count = 2
+Thread B: sold_count += 2 → save!  →  DB: sold_count = 2  ← A's write lost
+Result: 4 tickets sold against 2 available
+```
+
+## Fix
+
+```ruby
+def reserve_tickets!(count)
+  with_lock do
+    raise "Not enough tickets available" if available_quantity < count
+    increment!(:sold_count, count)
+  end
+end
+```
+
+## Why this works
+
+`with_lock` issues `SELECT ... FOR UPDATE` — a pessimistic row-level lock. PostgreSQL blocks any other transaction from reading or writing that row until the lock is released. The check and the increment are now a single atomic unit.
+
+```
+Thread A: SELECT FOR UPDATE → acquires lock
+Thread B: SELECT FOR UPDATE → blocks, waits
+Thread A: available_quantity → 2 ✓, increment! sold_count = 2, commit → releases lock
+Thread B: lock acquired → available_quantity → 0 ✗ → raises "Not enough tickets available"
+Result: exactly 2 tickets sold — no oversell
+```
+
+`increment!` issues a single `UPDATE sold_count = sold_count + N` — no stale in-memory value involved.
