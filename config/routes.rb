@@ -6,6 +6,11 @@ Rails.application.routes.draw do
 
       resources :events do
         resources :ticket_tiers, only: [:index, :create, :update, :destroy]
+        resources :bookmarks,    only: [:create, :destroy] do
+          collection do
+            get :count
+          end
+        end
       end
 
       resources :orders, only: [:index, :show, :create] do
@@ -13,6 +18,9 @@ Rails.application.routes.draw do
           post :cancel
         end
       end
+
+      # GET /api/v1/bookmarks — attendee's own bookmarked events list
+      get "bookmarks", to: "bookmarks#index"
     end
   end
 end

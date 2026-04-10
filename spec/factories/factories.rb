@@ -71,6 +71,11 @@ FactoryBot.define do
     end
   end
 
+  factory :bookmark do
+    association :user, factory: :user
+    association :event
+  end
+
   factory :order_item do
     association :order
     association :ticket_tier

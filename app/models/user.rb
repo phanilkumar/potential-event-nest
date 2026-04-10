@@ -3,6 +3,8 @@ class User < ApplicationRecord
 
   has_many :events
   has_many :orders
+  has_many :bookmarks
+  has_many :bookmarked_events, through: :bookmarks, source: :event
 
   validates :email, presence: true, uniqueness: true
   validates :name, presence: true

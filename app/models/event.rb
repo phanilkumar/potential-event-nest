@@ -2,6 +2,7 @@ class Event < ApplicationRecord
   belongs_to :user
   has_many :ticket_tiers, dependent: :destroy
   has_many :orders
+  has_many :bookmarks, dependent: :destroy
 
   validates :title, presence: true
 
@@ -26,7 +27,10 @@ class Event < ApplicationRecord
   end
 
   def enqueue_geocode_if_venue_changed
-    GeocodeVenueJob.perform_later(id) if saved_change_to_venue?
+    return unless saved_change_to_venue?
+    GeocodeVenueJob.perform_later(id)
+  rescue StandardError => e
+    Rails.logger.error("GeocodeVenueJob enqueue failed: #{e.message}")
   end
 
   def notify_attendees_if_cancelled
